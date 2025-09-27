@@ -254,32 +254,40 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
     setCurrentLine(2); // let permutation = shuffle(nodes)
     await sleep(speedRef.current);
 
-    for (const pivot of permutation) {
+    // Go through each node in the permutation order
+    for (const node of permutation) {
       if (stopSignal.current) break;
       
-      if (!clusters.hasOwnProperty(pivot.id)) {
-        setCurrentLine(6); // for (let pivot of permutation)
+      setCurrentLine(5); // for (let pivot of permutation)
+      
+      // Check if this node is already assigned
+      if (!clusters.hasOwnProperty(node.id)) {
+        // This is an unassigned node, make it a pivot
+        setCurrentLine(6); // if (!clusters.hasOwnProperty(pivot))
         await sleep(speedRef.current);
         
-        // Highlight current pivot in red
-        setCurrentPivot(pivot.id);
-        setPivots(prev => new Set([...prev, pivot.id]));
-        setCurrentLine(8); // clusters[pivot] = clusterIndex
+        // Highlight current pivot with red outline
+        setCurrentPivot(node.id);
+        setPivots(prev => new Set([...prev, node.id]));
         
-        clusters[pivot.id] = clusterIndex;
+        // Assign cluster to pivot
+        setCurrentLine(8); // clusters[pivot] = clusterIndex
+        clusters[node.id] = clusterIndex;
         setNodes(prev => prev.map(n => 
-          n.id === pivot.id ? {...n, cluster: clusterIndex, isPivot: true} : n
+          n.id === node.id ? {...n, cluster: clusterIndex} : n
         ));
         await sleep(speedRef.current);
 
-        // Get and color neighbors with same cluster color
-        const neighbors = getNeighbors(pivot.id, edges);
+        // Get all unassigned neighbors
+        const neighbors = getNeighbors(node.id, edges);
         setCurrentLine(11); // for (let neighbor of getNeighbors...)
         
         for (const neighbor of neighbors) {
           if (stopSignal.current) break;
+          
+          // Only add if neighbor is unassigned
           if (!clusters.hasOwnProperty(neighbor)) {
-            setCurrentLine(13); // clusters[neighbor] = clusterIndex
+            setCurrentLine(12); // if (!clusters.hasOwnProperty(neighbor))
             await sleep(speedRef.current / 2);
             
             clusters[neighbor] = clusterIndex;
@@ -289,11 +297,15 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
           }
         }
 
+        // Done with this cluster, increment index for next pivot
         clusterIndex++;
         setCurrentLine(17); // clusterIndex++
         await sleep(speedRef.current);
-        setCurrentPivot(null); // Clear current pivot highlighting
+        
+        // Remove red outline from current pivot
+        setCurrentPivot(null);
       }
+      // If node is already assigned, just continue to next node
     }
 
     setCurrentLine(-1);
@@ -467,6 +479,7 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
 
     setRunning(true);
     setBuilderMode('view');
+    stopSignal.current = false;
     
     // Initialize random centroids
     setCurrentLine(2);
@@ -479,7 +492,7 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
     let changed = true;
     let iterations = 0;
 
-    while (changed && iterations < 50) {
+    while (changed && iterations < 50 && !stopSignal.current) {
       changed = false;
       
       // Assignment step
@@ -487,6 +500,8 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
       await sleep(speedRef.current);
       
       for (let i = 0; i < nodes.length; i++) {
+        if (stopSignal.current) break;
+        
         setCurrentLine(11);
         await sleep(speedRef.current / 2);
         
@@ -778,13 +793,13 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
       baseStyle.opacity = 0.3;
     }
     
-    // Highlight current pivot in red
+    // Current pivot gets red outline but keeps its cluster color
     if (currentPivot === node.id) {
       baseStyle.stroke = '#dc2626';
       baseStyle.strokeWidth = 4;
-      baseStyle.fill = '#ef4444'; // Red for current pivot
+      // Don't override fill - let it use cluster color
     } else if (pivots.has(node.id)) {
-      // Mark previous pivots with thicker border
+      // Previously processed pivots get orange border
       baseStyle.stroke = '#f59e0b';
       baseStyle.strokeWidth = 3;
     }
