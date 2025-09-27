@@ -247,9 +247,13 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
     setPivots(new Set());
     stopSignal.current = false;
     
+    // Track cluster assignments
+    const assigned = new Set<string>();
     const clusters: Record<string, number> = {};
     const permutation = [...nodes].sort(() => Math.random() - 0.5);
     let clusterIndex = 0;
+
+    console.log('Starting pivot algorithm with permutation:', permutation.map(n => n.id));
 
     setCurrentLine(2); // let permutation = shuffle(nodes)
     await sleep(speedRef.current);
@@ -259,9 +263,12 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
       if (stopSignal.current) break;
       
       setCurrentLine(5); // for (let pivot of permutation)
+      await sleep(speedRef.current / 2);
       
       // Check if this node is already assigned
-      if (!clusters.hasOwnProperty(node.id)) {
+      if (!assigned.has(node.id)) {
+        console.log(`Node ${node.id} is unassigned, making it pivot for cluster ${clusterIndex}`);
+        
         // This is an unassigned node, make it a pivot
         setCurrentLine(6); // if (!clusters.hasOwnProperty(pivot))
         await sleep(speedRef.current);
@@ -273,27 +280,37 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
         // Assign cluster to pivot
         setCurrentLine(8); // clusters[pivot] = clusterIndex
         clusters[node.id] = clusterIndex;
+        assigned.add(node.id);
+        
         setNodes(prev => prev.map(n => 
           n.id === node.id ? {...n, cluster: clusterIndex} : n
         ));
         await sleep(speedRef.current);
 
-        // Get all unassigned neighbors
+        // Get all neighbors and add unassigned ones
         const neighbors = getNeighbors(node.id, edges);
+        console.log(`Neighbors of ${node.id}:`, neighbors);
+        
         setCurrentLine(11); // for (let neighbor of getNeighbors...)
         
-        for (const neighbor of neighbors) {
+        for (const neighborId of neighbors) {
           if (stopSignal.current) break;
           
           // Only add if neighbor is unassigned
-          if (!clusters.hasOwnProperty(neighbor)) {
+          if (!assigned.has(neighborId)) {
             setCurrentLine(12); // if (!clusters.hasOwnProperty(neighbor))
-            await sleep(speedRef.current / 2);
             
-            clusters[neighbor] = clusterIndex;
+            console.log(`  Adding neighbor ${neighborId} to cluster ${clusterIndex}`);
+            clusters[neighborId] = clusterIndex;
+            assigned.add(neighborId);
+            
             setNodes(prev => prev.map(n => 
-              n.id === neighbor ? {...n, cluster: clusterIndex} : n
+              n.id === neighborId ? {...n, cluster: clusterIndex} : n
             ));
+            
+            await sleep(speedRef.current / 2);
+          } else {
+            console.log(`  Neighbor ${neighborId} already assigned to cluster ${clusters[neighborId]}`);
           }
         }
 
@@ -304,9 +321,13 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
         
         // Remove red outline from current pivot
         setCurrentPivot(null);
+      } else {
+        console.log(`Node ${node.id} already assigned to cluster ${clusters[node.id]}, skipping`);
       }
-      // If node is already assigned, just continue to next node
     }
+
+    console.log('Final cluster assignments:', clusters);
+    console.log('Total clusters created:', clusterIndex);
 
     setCurrentLine(-1);
     setCurrentPivot(null);
