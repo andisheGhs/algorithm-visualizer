@@ -11,12 +11,14 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
   const [nodes, setNodes] = useState<GraphNode[]>([]);
   const [edges, setEdges] = useState<GraphEdge[]>([]);
   const [builderMode, setBuilderMode] = useState<'add-node' | 'add-edge' | 'delete' | 'move' | 'view'>('add-node');
-  const [edgeType, setEdgeType] = useState<'positive' | 'negative'>('positive');
-  const [algorithm, setAlgorithm] = useState<'pivot' | 'kmeans'>('pivot');
+  const [algorithm, setAlgorithm] = useState<'pivot' | 'k-pivot' | 'balanced-pivot' | 'kmeans'>('pivot');
   const [running, setRunning] = useState(false);
   const [speed, setSpeed] = useState(500);
   const [currentLine, setCurrentLine] = useState(-1);
-  const [k, setK] = useState(3); // For K-means
+  const [k, setK] = useState(3); // For K-means and K-pivot
+  const [currentPivot, setCurrentPivot] = useState<string | null>(null);
+  const [pivots, setPivots] = useState<Set<string>>(new Set());
+  const [arrivedNodes, setArrivedNodes] = useState<Set<string>>(new Set());
   const speedRef = useRef(500);
   speedRef.current = speed;
 
@@ -65,17 +67,6 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
       color: isActive ? 'white' : '#374151',
       transition: 'all 0.2s',
     }),
-    edgeTypeButton: (isActive: boolean, type: string) => ({
-      padding: '8px 16px',
-      borderRadius: '6px',
-      border: 'none',
-      cursor: 'pointer',
-      fontWeight: '500',
-      fontSize: '14px',
-      backgroundColor: isActive ? (type === 'positive' ? '#10b981' : '#ef4444') : '#e5e7eb',
-      color: isActive ? 'white' : '#374151',
-      transition: 'all 0.2s',
-    }),
     select: {
       padding: '8px 12px',
       borderRadius: '6px',
@@ -104,26 +95,93 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
   const pivotAlgorithmCode = [
     'function pivotClustering(nodes, edges) {',
     '  let clusters = {}',
-    '  let unclustered = new Set(nodes)',
+    '  let permutation = shuffle(nodes)',
     '  let clusterIndex = 0',
     '  ',
-    '  while (unclustered.size > 0) {',
-    '    // Pick random pivot',
-    '    let pivot = randomChoice(unclustered)',
+    '  for (let pivot of permutation) {',
+    '    if (!clusters.hasOwnProperty(pivot)) {',
+    '      // Create new cluster with pivot',
+    '      clusters[pivot] = clusterIndex',
+    '      ',
+    '      // Add all neighbors to cluster',
+    '      for (let neighbor of getNeighbors(pivot, edges)) {',
+    '        if (!clusters.hasOwnProperty(neighbor)) {',
+    '          clusters[neighbor] = clusterIndex',
+    '        }',
+    '      }',
+    '      ',
+    '      clusterIndex++',
+    '    }',
+    '  }',
+    '  return clusters',
+    '}'
+  ];
+
+  const kPivotAlgorithmCode = [
+    'function kPivotClustering(nodes, edges, k) {',
+    '  let clusters = {}',
+    '  let clusterSizes = new Array(k).fill(0)',
+    '  let permutation = shuffle(nodes)',
+    '  let pivotCount = 0',
+    '  ',
+    '  for (let pivot of permutation) {',
+    '    if (!clusters.hasOwnProperty(pivot)) {',
+    '      let clusterId',
+    '      ',
+    '      if (pivotCount < k) {',
+    '        // First k pivots create new clusters',
+    '        clusterId = pivotCount',
+    '        pivotCount++',
+    '      } else {',
+    '        // Find cluster with minimum size',
+    '        clusterId = clusterSizes.indexOf(Math.min(...clusterSizes))',
+    '      }',
+    '      ',
+    '      clusters[pivot] = clusterId',
+    '      clusterSizes[clusterId]++',
+    '      ',
+    '      // Add neighbors to same cluster',
+    '      for (let neighbor of getNeighbors(pivot, edges)) {',
+    '        if (!clusters.hasOwnProperty(neighbor)) {',
+    '          clusters[neighbor] = clusterId',
+    '          clusterSizes[clusterId]++',
+    '        }',
+    '      }',
+    '    }',
+    '  }',
+    '  return clusters',
+    '}'
+  ];
+
+  const balancedPivotCode = [
+    'function balancedPivot(nodes, edges, k) {',
+    '  let clusters = {}',
+    '  let pivots = new Set()',
+    '  let clusterSizes = new Array(k).fill(0)',
+    '  ',
+    '  // Process nodes one by one (online)',
+    '  for (let node of nodes) {',
+    '    let pivotNeighbor = null',
     '    ',
-    '    // Create new cluster with pivot',
-    '    clusters[pivot] = clusterIndex',
-    '    unclustered.delete(pivot)',
-    '    ',
-    '    // Add positive neighbors to cluster',
-    '    for (let neighbor of getPositiveNeighbors(pivot)) {',
-    '      if (unclustered.has(neighbor)) {',
-    '        clusters[neighbor] = clusterIndex',
-    '        unclustered.delete(neighbor)',
+    '    // Check if node has a pivot neighbor',
+    '    for (let neighbor of getNeighbors(node, edges)) {',
+    '      if (pivots.has(neighbor)) {',
+    '        pivotNeighbor = neighbor',
+    '        break',
     '      }',
     '    }',
     '    ',
-    '    clusterIndex++',
+    '    if (pivotNeighbor) {',
+    '      // Add to pivot neighbor\'s cluster',
+    '      clusters[node] = clusters[pivotNeighbor]',
+    '      clusterSizes[clusters[node]]++',
+    '    } else {',
+    '      // Make it a pivot in smallest cluster',
+    '      let clusterId = clusterSizes.indexOf(Math.min(...clusterSizes))',
+    '      clusters[node] = clusterId',
+    '      clusterSizes[clusterId]++',
+    '      pivots.add(node)',
+    '    }',
     '  }',
     '  return clusters',
     '}'
@@ -161,60 +219,220 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
 
   const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+  const getNeighbors = (nodeId: string, edges: GraphEdge[]): string[] => {
+    const neighbors: string[] = [];
+    edges.forEach(edge => {
+      if (edge.from === nodeId) neighbors.push(edge.to);
+      if (edge.to === nodeId) neighbors.push(edge.from);
+    });
+    return neighbors;
+  };
+
   const runPivotAlgorithm = async () => {
     setRunning(true);
     setBuilderMode('view');
+    setCurrentPivot(null);
+    setPivots(new Set());
     
     const clusters: Record<string, number> = {};
-    const unclustered = new Set(nodes.map(n => n.id));
+    const permutation = [...nodes].sort(() => Math.random() - 0.5);
     let clusterIndex = 0;
 
-    setCurrentLine(2); // let unclustered = ...
+    setCurrentLine(2); // let permutation = shuffle(nodes)
     await sleep(speedRef.current);
 
-    while (unclustered.size > 0) {
-      setCurrentLine(7); // let pivot = ...
-      await sleep(speedRef.current);
-      
-      const pivotArray = Array.from(unclustered);
-      const pivot = pivotArray[Math.floor(Math.random() * pivotArray.length)];
-      
-      setCurrentLine(10); // clusters[pivot] = ...
-      clusters[pivot] = clusterIndex;
-      unclustered.delete(pivot);
-      
-      setNodes(prev => prev.map(n => 
-        n.id === pivot ? {...n, cluster: clusterIndex} : n
-      ));
-      await sleep(speedRef.current);
-
-      setCurrentLine(14); // for (let neighbor...)
-      const positiveEdges = edges.filter(e => 
-        e.type === 'positive' && (e.from === pivot || e.to === pivot)
-      );
-
-      for (const edge of positiveEdges) {
-        const neighbor = edge.from === pivot ? edge.to : edge.from;
+    for (const pivot of permutation) {
+      if (!clusters.hasOwnProperty(pivot.id)) {
+        setCurrentLine(6); // for (let pivot of permutation)
+        await sleep(speedRef.current);
         
-        if (unclustered.has(neighbor)) {
-          setCurrentLine(16); // clusters[neighbor] = ...
-          await sleep(speedRef.current);
-          
-          clusters[neighbor] = clusterIndex;
-          unclustered.delete(neighbor);
-          
-          setNodes(prev => prev.map(n => 
-            n.id === neighbor ? {...n, cluster: clusterIndex} : n
-          ));
-        }
-      }
+        // Highlight current pivot
+        setCurrentPivot(pivot.id);
+        setPivots(prev => new Set([...prev, pivot.id]));
+        setCurrentLine(8); // clusters[pivot] = clusterIndex
+        
+        clusters[pivot.id] = clusterIndex;
+        setNodes(prev => prev.map(n => 
+          n.id === pivot.id ? {...n, cluster: clusterIndex} : n
+        ));
+        await sleep(speedRef.current);
 
-      clusterIndex++;
-      setCurrentLine(21); // clusterIndex++
-      await sleep(speedRef.current);
+        // Get and highlight neighbors
+        const neighbors = getNeighbors(pivot.id, edges);
+        setCurrentLine(11); // for (let neighbor of getNeighbors...)
+        
+        for (const neighbor of neighbors) {
+          if (!clusters.hasOwnProperty(neighbor)) {
+            setCurrentLine(13); // clusters[neighbor] = clusterIndex
+            await sleep(speedRef.current / 2);
+            
+            clusters[neighbor] = clusterIndex;
+            setNodes(prev => prev.map(n => 
+              n.id === neighbor ? {...n, cluster: clusterIndex} : n
+            ));
+          }
+        }
+
+        clusterIndex++;
+        setCurrentLine(17); // clusterIndex++
+        await sleep(speedRef.current);
+        setCurrentPivot(null);
+      }
     }
 
     setCurrentLine(-1);
+    setCurrentPivot(null);
+    setPivots(new Set());
+    setRunning(false);
+  };
+
+  const runKPivotAlgorithm = async () => {
+    setRunning(true);
+    setBuilderMode('view');
+    setCurrentPivot(null);
+    setPivots(new Set());
+    
+    const clusters: Record<string, number> = {};
+    const clusterSizes = new Array(k).fill(0);
+    const permutation = [...nodes].sort(() => Math.random() - 0.5);
+    let pivotCount = 0;
+
+    setCurrentLine(2); // let clusterSizes = new Array(k).fill(0)
+    await sleep(speedRef.current);
+
+    for (const pivot of permutation) {
+      if (!clusters.hasOwnProperty(pivot.id)) {
+        setCurrentLine(7); // for (let pivot of permutation)
+        await sleep(speedRef.current);
+        
+        let clusterId: number;
+        
+        if (pivotCount < k) {
+          setCurrentLine(11); // if (pivotCount < k)
+          clusterId = pivotCount;
+          pivotCount++;
+        } else {
+          setCurrentLine(16); // clusterId = clusterSizes.indexOf...
+          clusterId = clusterSizes.indexOf(Math.min(...clusterSizes));
+        }
+        
+        // Highlight current pivot
+        setCurrentPivot(pivot.id);
+        setPivots(prev => new Set([...prev, pivot.id]));
+        
+        setCurrentLine(19); // clusters[pivot] = clusterId
+        clusters[pivot.id] = clusterId;
+        clusterSizes[clusterId]++;
+        setNodes(prev => prev.map(n => 
+          n.id === pivot.id ? {...n, cluster: clusterId} : n
+        ));
+        await sleep(speedRef.current);
+
+        // Add neighbors
+        const neighbors = getNeighbors(pivot.id, edges);
+        setCurrentLine(23); // for (let neighbor of getNeighbors...)
+        
+        for (const neighbor of neighbors) {
+          if (!clusters.hasOwnProperty(neighbor)) {
+            setCurrentLine(25); // clusters[neighbor] = clusterId
+            await sleep(speedRef.current / 2);
+            
+            clusters[neighbor] = clusterId;
+            clusterSizes[clusterId]++;
+            setNodes(prev => prev.map(n => 
+              n.id === neighbor ? {...n, cluster: clusterId} : n
+            ));
+          }
+        }
+        
+        await sleep(speedRef.current);
+        setCurrentPivot(null);
+      }
+    }
+
+    setCurrentLine(-1);
+    setCurrentPivot(null);
+    setPivots(new Set());
+    setRunning(false);
+  };
+
+  const runBalancedPivotAlgorithm = async () => {
+    setRunning(true);
+    setBuilderMode('view');
+    setCurrentPivot(null);
+    setPivots(new Set());
+    setArrivedNodes(new Set());
+    
+    const clusters: Record<string, number> = {};
+    const pivotsSet = new Set<string>();
+    const clusterSizes = new Array(k).fill(0);
+    
+    // Reset all nodes to be "unarrived" (faded)
+    setNodes(prev => prev.map(n => ({...n, cluster: undefined})));
+
+    setCurrentLine(1); // function balancedPivot...
+    await sleep(speedRef.current);
+
+    // Process nodes one by one
+    for (const node of nodes) {
+      setCurrentLine(6); // for (let node of nodes)
+      
+      // Mark node as arrived
+      setArrivedNodes(prev => new Set([...prev, node.id]));
+      await sleep(speedRef.current);
+
+      let pivotNeighbor: string | null = null;
+      
+      setCurrentLine(10); // for (let neighbor of getNeighbors...)
+      const neighbors = getNeighbors(node.id, edges);
+      
+      // Only consider neighbors that have already arrived
+      for (const neighbor of neighbors) {
+        if (pivotsSet.has(neighbor) && arrivedNodes.has(neighbor)) {
+          pivotNeighbor = neighbor;
+          break;
+        }
+      }
+
+      if (pivotNeighbor) {
+        setCurrentLine(18); // if (pivotNeighbor)
+        await sleep(speedRef.current);
+        
+        // Add to pivot neighbor's cluster
+        setCurrentLine(20); // clusters[node] = clusters[pivotNeighbor]
+        clusters[node.id] = clusters[pivotNeighbor];
+        clusterSizes[clusters[node.id]]++;
+        setNodes(prev => prev.map(n => 
+          n.id === node.id ? {...n, cluster: clusters[node.id]} : n
+        ));
+      } else {
+        setCurrentLine(23); // else
+        await sleep(speedRef.current);
+        
+        // Make it a pivot in smallest cluster
+        setCurrentLine(24); // let clusterId = clusterSizes.indexOf...
+        const clusterId = clusterSizes.indexOf(Math.min(...clusterSizes));
+        
+        setCurrentPivot(node.id);
+        setPivots(prev => new Set([...prev, node.id]));
+        
+        clusters[node.id] = clusterId;
+        clusterSizes[clusterId]++;
+        pivotsSet.add(node.id);
+        
+        setNodes(prev => prev.map(n => 
+          n.id === node.id ? {...n, cluster: clusterId} : n
+        ));
+        
+        await sleep(speedRef.current);
+        setCurrentPivot(null);
+      }
+    }
+
+    setCurrentLine(-1);
+    setCurrentPivot(null);
+    setPivots(new Set());
+    setArrivedNodes(new Set());
     setRunning(false);
   };
 
@@ -294,26 +512,41 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
   };
 
   const runAlgorithm = () => {
-    if (algorithm === 'pivot') {
-      runPivotAlgorithm();
-    } else {
-      runKMeans();
+    switch (algorithm) {
+      case 'pivot':
+        runPivotAlgorithm();
+        break;
+      case 'k-pivot':
+        runKPivotAlgorithm();
+        break;
+      case 'balanced-pivot':
+        runBalancedPivotAlgorithm();
+        break;
+      case 'kmeans':
+        runKMeans();
+        break;
     }
   };
 
   const resetClusters = () => {
     setNodes(nodes.map(n => ({...n, cluster: undefined})));
     setCurrentLine(-1);
+    setCurrentPivot(null);
+    setPivots(new Set());
+    setArrivedNodes(new Set());
   };
 
   const clearAll = () => {
     setNodes([]);
     setEdges([]);
     setCurrentLine(-1);
+    setCurrentPivot(null);
+    setPivots(new Set());
+    setArrivedNodes(new Set());
   };
 
   // Predefined example datasets
-  const loadPivotExample = () => {
+  const loadCorrelationExample = () => {
     // Create a graph with 3 clear communities
     const exampleNodes: GraphNode[] = [
       // Community 1 (top-left)
@@ -340,36 +573,29 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
     ];
 
     const exampleEdges: GraphEdge[] = [
-      // Community 1 internal (positive)
+      // Community 1 internal (all positive by default)
       { from: 'n1', to: 'n2', type: 'positive' },
       { from: 'n1', to: 'n3', type: 'positive' },
       { from: 'n2', to: 'n4', type: 'positive' },
       { from: 'n3', to: 'n4', type: 'positive' },
       
-      // Community 2 internal (positive)
+      // Community 2 internal
       { from: 'n5', to: 'n6', type: 'positive' },
       { from: 'n5', to: 'n7', type: 'positive' },
       { from: 'n6', to: 'n8', type: 'positive' },
       { from: 'n7', to: 'n8', type: 'positive' },
       
-      // Community 3 internal (positive)
+      // Community 3 internal
       { from: 'n9', to: 'n10', type: 'positive' },
       { from: 'n9', to: 'n11', type: 'positive' },
       { from: 'n10', to: 'n12', type: 'positive' },
       { from: 'n11', to: 'n12', type: 'positive' },
       
-      // Bridge connections (mixed)
+      // Bridge connections
       { from: 'n13', to: 'n1', type: 'positive' },
       { from: 'n13', to: 'n9', type: 'positive' },
       { from: 'n14', to: 'n5', type: 'positive' },
       { from: 'n14', to: 'n9', type: 'positive' },
-      
-      // Negative edges between communities
-      { from: 'n2', to: 'n6', type: 'negative' },
-      { from: 'n3', to: 'n7', type: 'negative' },
-      { from: 'n4', to: 'n10', type: 'negative' },
-      { from: 'n8', to: 'n11', type: 'negative' },
-      { from: 'n13', to: 'n14', type: 'negative' },
     ];
 
     setNodes(exampleNodes);
@@ -433,13 +659,6 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
       });
     }
 
-    // Add some outliers
-    exampleNodes.push(
-      { id: `n${nodeId++}`, x: 350, y: 100, label: String(nodeId-1) },
-      { id: `n${nodeId++}`, x: 350, y: 280, label: String(nodeId-1) },
-      { id: `n${nodeId++}`, x: 650, y: 300, label: String(nodeId-1) }
-    );
-
     setNodes(exampleNodes);
     setEdges([]); // K-means doesn't use edges
     setAlgorithm('kmeans');
@@ -448,32 +667,32 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
   };
 
   const loadSocialNetworkExample = () => {
-    // Create a more complex social network with multiple communities
+    // Create a more complex social network
     const exampleNodes: GraphNode[] = [
-      // Friend group 1 (top)
+      // Friend group 1
       { id: 'p1', x: 300, y: 100, label: 'A' },
       { id: 'p2', x: 250, y: 150, label: 'B' },
       { id: 'p3', x: 350, y: 150, label: 'C' },
       { id: 'p4', x: 300, y: 200, label: 'D' },
       
-      // Friend group 2 (left)
+      // Friend group 2
       { id: 'p5', x: 150, y: 250, label: 'E' },
       { id: 'p6', x: 100, y: 300, label: 'F' },
       { id: 'p7', x: 200, y: 300, label: 'G' },
       { id: 'p8', x: 150, y: 350, label: 'H' },
       
-      // Friend group 3 (right)
+      // Friend group 3
       { id: 'p9', x: 550, y: 250, label: 'I' },
       { id: 'p10', x: 500, y: 300, label: 'J' },
       { id: 'p11', x: 600, y: 300, label: 'K' },
       { id: 'p12', x: 550, y: 350, label: 'L' },
       
-      // Friend group 4 (bottom)
+      // Friend group 4
       { id: 'p13', x: 350, y: 400, label: 'M' },
       { id: 'p14', x: 300, y: 450, label: 'N' },
       { id: 'p15', x: 400, y: 450, label: 'O' },
       
-      // Connectors/influencers
+      // Connectors
       { id: 'p16', x: 350, y: 275, label: 'P' },
       { id: 'p17', x: 250, y: 350, label: 'Q' },
       { id: 'p18', x: 450, y: 350, label: 'R' },
@@ -485,21 +704,18 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
       { from: 'p1', to: 'p3', type: 'positive' },
       { from: 'p2', to: 'p4', type: 'positive' },
       { from: 'p3', to: 'p4', type: 'positive' },
-      { from: 'p1', to: 'p4', type: 'positive' },
       
       // Group 2 internal
       { from: 'p5', to: 'p6', type: 'positive' },
       { from: 'p5', to: 'p7', type: 'positive' },
       { from: 'p6', to: 'p8', type: 'positive' },
       { from: 'p7', to: 'p8', type: 'positive' },
-      { from: 'p5', to: 'p8', type: 'positive' },
       
       // Group 3 internal
       { from: 'p9', to: 'p10', type: 'positive' },
       { from: 'p9', to: 'p11', type: 'positive' },
       { from: 'p10', to: 'p12', type: 'positive' },
       { from: 'p11', to: 'p12', type: 'positive' },
-      { from: 'p9', to: 'p12', type: 'positive' },
       
       // Group 4 internal
       { from: 'p13', to: 'p14', type: 'positive' },
@@ -514,21 +730,35 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
       { from: 'p17', to: 'p13', type: 'positive' },
       { from: 'p18', to: 'p9', type: 'positive' },
       { from: 'p18', to: 'p13', type: 'positive' },
-      
-      // Conflicts (negative edges)
-      { from: 'p2', to: 'p10', type: 'negative' },
-      { from: 'p6', to: 'p11', type: 'negative' },
-      { from: 'p7', to: 'p12', type: 'negative' },
-      { from: 'p3', to: 'p5', type: 'negative' },
-      { from: 'p16', to: 'p17', type: 'negative' },
-      { from: 'p16', to: 'p18', type: 'negative' },
-      { from: 'p17', to: 'p18', type: 'negative' },
     ];
 
     setNodes(exampleNodes);
     setEdges(exampleEdges);
-    setAlgorithm('pivot');
+    setAlgorithm('k-pivot');
+    setK(4);
     setCurrentLine(-1);
+  };
+
+  // Modified node rendering to show pivot state and arrival status
+  const getNodeStyle = (node: GraphNode) => {
+    const baseStyle: any = {};
+    
+    // Fade nodes that haven't arrived yet (for balanced-pivot)
+    if (algorithm === 'balanced-pivot' && running && !arrivedNodes.has(node.id)) {
+      baseStyle.opacity = 0.3;
+    }
+    
+    // Highlight current pivot
+    if (currentPivot === node.id) {
+      baseStyle.stroke = '#dc2626';
+      baseStyle.strokeWidth = 4;
+      baseStyle.fill = '#fca5a5';
+    } else if (pivots.has(node.id)) {
+      baseStyle.stroke = '#f59e0b';
+      baseStyle.strokeWidth = 3;
+    }
+    
+    return baseStyle;
   };
 
   return (
@@ -572,36 +802,21 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
           </button>
         </div>
 
-        {builderMode === 'add-edge' && algorithm === 'pivot' && (
-          <div style={{ display: 'flex', gap: '5px' }}>
-            <button
-              style={styles.edgeTypeButton(edgeType === 'positive', 'positive')}
-              onClick={() => setEdgeType('positive')}
-            >
-              + Positive
-            </button>
-            <button
-              style={styles.edgeTypeButton(edgeType === 'negative', 'negative')}
-              onClick={() => setEdgeType('negative')}
-            >
-              − Negative
-            </button>
-          </div>
-        )}
-
         <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px', alignItems: 'center' }}>
           <label>Algorithm:</label>
           <select
             value={algorithm}
-            onChange={(e) => setAlgorithm(e.target.value as 'pivot' | 'kmeans')}
+            onChange={(e) => setAlgorithm(e.target.value as any)}
             style={styles.select}
             disabled={running}
           >
             <option value="pivot">Pivot (Correlation)</option>
+            <option value="k-pivot">K-Pivot (Correlation K-Clustering)</option>
+            <option value="balanced-pivot">Balanced Pivot (Online)</option>
             <option value="kmeans">K-Means</option>
           </select>
 
-          {algorithm === 'kmeans' && (
+          {(algorithm === 'kmeans' || algorithm === 'k-pivot' || algorithm === 'balanced-pivot') && (
             <>
               <label>K:</label>
               <input
@@ -653,7 +868,7 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
             fontSize: '14px',
             fontWeight: '500'
           }}
-          onClick={loadPivotExample}
+          onClick={loadCorrelationExample}
           disabled={running}
         >
           🔗 Correlation Clustering
@@ -698,12 +913,15 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
           <InteractiveGraphBuilder
             width={800}
             height={500}
-            nodes={nodes}
+            nodes={nodes.map(n => ({
+              ...n,
+              style: getNodeStyle(n)
+            }))}
             edges={edges}
             onNodesChange={setNodes}
             onEdgesChange={setEdges}
             mode={builderMode}
-            edgeType={edgeType}
+            edgeType="positive"
             showWeights={false}
             showInstructions={true}
           />
@@ -737,9 +955,19 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
         {/* Code Display */}
         <div>
           <CodeDisplay
-            code={algorithm === 'pivot' ? pivotAlgorithmCode : kmeansCode}
+            code={
+              algorithm === 'pivot' ? pivotAlgorithmCode :
+              algorithm === 'k-pivot' ? kPivotAlgorithmCode :
+              algorithm === 'balanced-pivot' ? balancedPivotCode :
+              kmeansCode
+            }
             currentLine={currentLine}
-            title={algorithm === 'pivot' ? 'Pivot Algorithm' : 'K-Means Algorithm'}
+            title={
+              algorithm === 'pivot' ? 'Pivot Algorithm' :
+              algorithm === 'k-pivot' ? 'K-Pivot Algorithm' :
+              algorithm === 'balanced-pivot' ? 'Balanced Pivot (Online)' :
+              'K-Means Algorithm'
+            }
           />
 
           <div style={{ 
@@ -751,17 +979,42 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
             lineHeight: '1.6'
           }}>
             <h3 style={{ fontWeight: 'bold', marginBottom: '10px' }}>
-              {algorithm === 'pivot' ? '📚 How Pivot Clustering Works:' : '📚 How K-Means Works:'}
+              {algorithm === 'pivot' ? '📚 How Pivot Clustering Works:' :
+               algorithm === 'k-pivot' ? '📚 How K-Pivot Clustering Works:' :
+               algorithm === 'balanced-pivot' ? '📚 How Balanced Pivot Works:' :
+               '📚 How K-Means Works:'}
             </h3>
             {algorithm === 'pivot' ? (
               <div style={{ color: '#6b7280' }}>
-                <p>1. Start with all nodes unclustered</p>
-                <p>2. Pick a random node as "pivot"</p>
+                <p>1. Process nodes in random permutation order</p>
+                <p>2. For each unassigned node (pivot):</p>
                 <p>3. Create a new cluster with the pivot</p>
-                <p>4. Add all nodes connected to pivot with <strong style={{color: '#10b981'}}>positive edges</strong> to the same cluster</p>
-                <p>5. Repeat until all nodes are clustered</p>
+                <p>4. Add all neighbors (connected nodes) to the same cluster</p>
+                <p>5. Continue until all nodes are clustered</p>
                 <p style={{ marginTop: '10px' }}>
-                  <strong>Goal:</strong> Minimize mistakes (positive edges between clusters, negative edges within clusters)
+                  <strong>Goal:</strong> Minimize correlation clustering cost (edges = positive correlation, no edge = negative)
+                </p>
+              </div>
+            ) : algorithm === 'k-pivot' ? (
+              <div style={{ color: '#6b7280' }}>
+                <p>1. Process nodes in random permutation order</p>
+                <p>2. First k pivots create new clusters</p>
+                <p>3. After k clusters exist:</p>
+                <p>4. New pivots go to the cluster with minimum nodes</p>
+                <p>5. Neighbors join the pivot's cluster</p>
+                <p style={{ marginTop: '10px' }}>
+                  <strong>Goal:</strong> Create k balanced clusters while respecting correlations
+                </p>
+              </div>
+            ) : algorithm === 'balanced-pivot' ? (
+              <div style={{ color: '#6b7280' }}>
+                <p>1. Nodes arrive one by one (online algorithm)</p>
+                <p>2. For each arriving node:</p>
+                <p>3. If it has a pivot neighbor → join that cluster</p>
+                <p>4. Otherwise → become pivot in smallest cluster</p>
+                <p>5. Process continues until all nodes arrive</p>
+                <p style={{ marginTop: '10px' }}>
+                  <strong>Goal:</strong> Balance cluster sizes in an online setting
                 </p>
               </div>
             ) : (

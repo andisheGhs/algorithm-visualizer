@@ -18,8 +18,8 @@ export const Home: React.FC<HomeProps> = ({ onNavigate }) => {
     {
       id: 'clustering',
       title: '🔗 Clustering',
-      description: 'Pivot, K-Means++',
-      algorithms: ['Pivot (Correlation)', 'K-Means++'],
+      description: 'Pivot, K-Means',
+      algorithms: ['Pivot (Correlation)', 'K-Means'],
       color: '#8b5cf6'
     },
     {
