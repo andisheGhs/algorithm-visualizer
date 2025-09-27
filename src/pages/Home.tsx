@@ -140,8 +140,6 @@ export const Home: React.FC<HomeProps> = ({ onNavigate }) => {
   };
 
   const handleBackClick = () => {
-    // This will navigate to your portfolio website
-    // Update the URL to match where your blog is hosted
     window.location.href = 'https://andisheghs.github.io/writing.html';
   };
 
@@ -168,7 +166,7 @@ export const Home: React.FC<HomeProps> = ({ onNavigate }) => {
           Interactive visualization of computer science algorithms
         </p>
         <div style={styles.authorCredit}>
-          Created by <a href="https://yourusername.github.io" style={styles.authorLink}>Andisheh Ghasemi</a>
+          Created by <a href="https://andisheghs.github.io" style={styles.authorLink}>Andisheh Ghasemi</a>
         </div>
       </header>
       
