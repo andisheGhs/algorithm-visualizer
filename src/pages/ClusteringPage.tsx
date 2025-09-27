@@ -21,6 +21,7 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
   const [arrivedNodes, setArrivedNodes] = useState<Set<string>>(new Set());
   const speedRef = useRef(500);
   speedRef.current = speed;
+  const stopSignal = useRef(false);
 
   const styles = {
     container: {
@@ -87,6 +88,17 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
       fontWeight: '500',
       fontSize: '14px',
       backgroundColor: '#10b981',
+      color: 'white',
+      marginRight: '10px',
+    },
+    stopButton: {
+      padding: '10px 20px',
+      borderRadius: '6px',
+      border: 'none',
+      cursor: 'pointer',
+      fontWeight: '500',
+      fontSize: '14px',
+      backgroundColor: '#ef4444',
       color: 'white',
       marginRight: '10px',
     }
@@ -233,6 +245,7 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
     setBuilderMode('view');
     setCurrentPivot(null);
     setPivots(new Set());
+    stopSignal.current = false;
     
     const clusters: Record<string, number> = {};
     const permutation = [...nodes].sort(() => Math.random() - 0.5);
@@ -242,26 +255,29 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
     await sleep(speedRef.current);
 
     for (const pivot of permutation) {
+      if (stopSignal.current) break;
+      
       if (!clusters.hasOwnProperty(pivot.id)) {
         setCurrentLine(6); // for (let pivot of permutation)
         await sleep(speedRef.current);
         
-        // Highlight current pivot
+        // Highlight current pivot in red
         setCurrentPivot(pivot.id);
         setPivots(prev => new Set([...prev, pivot.id]));
         setCurrentLine(8); // clusters[pivot] = clusterIndex
         
         clusters[pivot.id] = clusterIndex;
         setNodes(prev => prev.map(n => 
-          n.id === pivot.id ? {...n, cluster: clusterIndex} : n
+          n.id === pivot.id ? {...n, cluster: clusterIndex, isPivot: true} : n
         ));
         await sleep(speedRef.current);
 
-        // Get and highlight neighbors
+        // Get and color neighbors with same cluster color
         const neighbors = getNeighbors(pivot.id, edges);
         setCurrentLine(11); // for (let neighbor of getNeighbors...)
         
         for (const neighbor of neighbors) {
+          if (stopSignal.current) break;
           if (!clusters.hasOwnProperty(neighbor)) {
             setCurrentLine(13); // clusters[neighbor] = clusterIndex
             await sleep(speedRef.current / 2);
@@ -276,7 +292,7 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
         clusterIndex++;
         setCurrentLine(17); // clusterIndex++
         await sleep(speedRef.current);
-        setCurrentPivot(null);
+        setCurrentPivot(null); // Clear current pivot highlighting
       }
     }
 
@@ -291,6 +307,7 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
     setBuilderMode('view');
     setCurrentPivot(null);
     setPivots(new Set());
+    stopSignal.current = false;
     
     const clusters: Record<string, number> = {};
     const clusterSizes = new Array(k).fill(0);
@@ -301,6 +318,8 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
     await sleep(speedRef.current);
 
     for (const pivot of permutation) {
+      if (stopSignal.current) break;
+      
       if (!clusters.hasOwnProperty(pivot.id)) {
         setCurrentLine(7); // for (let pivot of permutation)
         await sleep(speedRef.current);
@@ -324,7 +343,7 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
         clusters[pivot.id] = clusterId;
         clusterSizes[clusterId]++;
         setNodes(prev => prev.map(n => 
-          n.id === pivot.id ? {...n, cluster: clusterId} : n
+          n.id === pivot.id ? {...n, cluster: clusterId, isPivot: true} : n
         ));
         await sleep(speedRef.current);
 
@@ -333,6 +352,7 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
         setCurrentLine(23); // for (let neighbor of getNeighbors...)
         
         for (const neighbor of neighbors) {
+          if (stopSignal.current) break;
           if (!clusters.hasOwnProperty(neighbor)) {
             setCurrentLine(25); // clusters[neighbor] = clusterId
             await sleep(speedRef.current / 2);
@@ -362,6 +382,7 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
     setCurrentPivot(null);
     setPivots(new Set());
     setArrivedNodes(new Set());
+    stopSignal.current = false;
     
     const clusters: Record<string, number> = {};
     const pivotsSet = new Set<string>();
@@ -375,6 +396,8 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
 
     // Process nodes one by one
     for (const node of nodes) {
+      if (stopSignal.current) break;
+      
       setCurrentLine(6); // for (let node of nodes)
       
       // Mark node as arrived
@@ -421,7 +444,7 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
         pivotsSet.add(node.id);
         
         setNodes(prev => prev.map(n => 
-          n.id === node.id ? {...n, cluster: clusterId} : n
+          n.id === node.id ? {...n, cluster: clusterId, isPivot: true} : n
         ));
         
         await sleep(speedRef.current);
@@ -511,7 +534,14 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
     setRunning(false);
   };
 
+  const stopAlgorithm = () => {
+    stopSignal.current = true;
+    setRunning(false);
+    setCurrentLine(-1);
+  };
+
   const runAlgorithm = () => {
+    stopSignal.current = false;
     switch (algorithm) {
       case 'pivot':
         runPivotAlgorithm();
@@ -748,12 +778,13 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
       baseStyle.opacity = 0.3;
     }
     
-    // Highlight current pivot
+    // Highlight current pivot in red
     if (currentPivot === node.id) {
       baseStyle.stroke = '#dc2626';
       baseStyle.strokeWidth = 4;
-      baseStyle.fill = '#fca5a5';
+      baseStyle.fill = '#ef4444'; // Red for current pivot
     } else if (pivots.has(node.id)) {
+      // Mark previous pivots with thicker border
       baseStyle.stroke = '#f59e0b';
       baseStyle.strokeWidth = 3;
     }
@@ -934,6 +965,13 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
               disabled={running || nodes.length === 0}
             >
               {running ? 'Running...' : '▶ Run Algorithm'}
+            </button>
+            <button
+              style={styles.stopButton}
+              onClick={stopAlgorithm}
+              disabled={!running}
+            >
+              ⬛ Stop
             </button>
             <button
               style={{ ...styles.controlButton, backgroundColor: '#6b7280' }}

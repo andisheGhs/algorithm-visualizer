@@ -207,37 +207,51 @@ export const InteractiveGraphBuilder: React.FC<InteractiveGraphBuilderProps> = (
         })}
 
         {/* Draw nodes */}
-        {nodes.map(node => (
-          <g key={node.id}>
-            <circle
-              cx={node.x}
-              cy={node.y}
-              r="20"
-              fill={getClusterColor(node.cluster)}
-              stroke={selectedNode === node.id ? '#dc2626' : '#374151'}
-              strokeWidth={selectedNode === node.id ? '3' : '2'}
-              opacity={node.style?.opacity || 1}
-              style={{ 
-                cursor: mode === 'view' ? 'default' : 'pointer',
-                ...node.style
-              }}
-              onMouseDown={(e) => handleNodeMouseDown(node.id, e)}
-              onClick={() => handleNodeClick(node.id)}
-            />
-            <text
-              x={node.x}
-              y={node.y}
-              fill="white"
-              fontSize="14"
-              fontWeight="bold"
-              textAnchor="middle"
-              dy="5"
-              pointerEvents="none"
-            >
-              {node.label || node.id}
-            </text>
-          </g>
-        ))}
+        {nodes.map(node => {
+          const isSelected = selectedNode === node.id;
+          const color = node.cluster !== undefined ? 
+            clusterColors[node.cluster % clusterColors.length] : '#9ca3af';
+          
+          // Apply any custom styles from the node
+          const finalStyle = {
+            fill: node.style?.fill || color,
+            stroke: node.style?.stroke || (isSelected ? '#fbbf24' : '#374151'),
+            strokeWidth: node.style?.strokeWidth || (isSelected ? 3 : 2),
+            opacity: node.style?.opacity !== undefined ? node.style.opacity : 1,
+          };
+          
+          return (
+            <g key={node.id}>
+              <circle
+                cx={node.x}
+                cy={node.y}
+                r="20"
+                fill={finalStyle.fill}
+                stroke={finalStyle.stroke}
+                strokeWidth={finalStyle.strokeWidth}
+                opacity={finalStyle.opacity}
+                onClick={(e) => handleNodeClick(node.id, e)}
+                onMouseDown={(e) => handleNodeMouseDown(node.id, e)}
+                style={{ 
+                  cursor: mode === 'view' ? 'default' : 'pointer',
+                  transition: 'all 0.3s ease'
+                }}
+              />
+              <text
+                x={node.x}
+                y={node.y}
+                fill="white"
+                fontSize="14"
+                fontWeight="bold"
+                textAnchor="middle"
+                dy="5"
+                pointerEvents="none"
+              >
+                {node.label || node.id}
+              </text>
+            </g>
+          );
+        })}
       </svg>
 
       {/* Instructions */}

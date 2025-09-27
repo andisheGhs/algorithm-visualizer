@@ -64,29 +64,48 @@ export const CodeDisplay: React.FC<CodeDisplayProps> = ({
   };
 
   const syntaxHighlight = (line: string) => {
-    // Basic syntax highlighting
-    let highlighted = line;
-
-    // Keywords
-    const keywords = ['function', 'let', 'const', 'var', 'for', 'while', 'if', 'else', 'return', 'new', 'true', 'false', 'break', 'continue'];
-    keywords.forEach(keyword => {
-      const regex = new RegExp(`\\b${keyword}\\b`, 'g');
-      highlighted = highlighted.replace(regex, `<span style="color: #c084fc; font-weight: bold">${keyword}</span>`);
+    // Create a more robust tokenizer that returns React elements
+    const parts: React.ReactNode[] = [];
+    const keywords = ['function', 'let', 'const', 'var', 'for', 'while', 'if', 'else', 'return', 'new', 'true', 'false', 'break', 'continue', 'of', 'in'];
+    
+    // Check if it's a comment line
+    if (line.trim().startsWith('//')) {
+      return <span style={{ color: '#64748b', fontStyle: 'italic' }}>{line}</span>;
+    }
+    
+    // Split line into tokens while preserving whitespace
+    const tokens = line.split(/(\s+|[(){}[\],;.=<>!&|+\-*/])/);
+    
+    tokens.forEach((token, index) => {
+      if (!token) return;
+      
+      // Check if token is a keyword
+      if (keywords.includes(token)) {
+        parts.push(<span key={index} style={{ color: '#c084fc', fontWeight: 'bold' }}>{token}</span>);
+      }
+      // Check if token is a number
+      else if (/^\d+$/.test(token)) {
+        parts.push(<span key={index} style={{ color: '#67e8f9' }}>{token}</span>);
+      }
+      // Check if token is a string
+      else if (/^['"].*['"]$/.test(token)) {
+        parts.push(<span key={index} style={{ color: '#86efac' }}>{token}</span>);
+      }
+      // Check if it's a function name (followed by parenthesis)
+      else if (index < tokens.length - 1 && tokens[index + 1] === '(') {
+        if (!/^[(){}[\],;.=<>!&|+\-*/\s]$/.test(token)) {
+          parts.push(<span key={index} style={{ color: '#fbbf24' }}>{token}</span>);
+        } else {
+          parts.push(token);
+        }
+      }
+      // Default text
+      else {
+        parts.push(token);
+      }
     });
-
-    // Comments
-    highlighted = highlighted.replace(/(\/\/.*$)/gm, '<span style="color: #64748b; font-style: italic">$1</span>');
-
-    // Strings
-    highlighted = highlighted.replace(/(['"])((?:\\.|(?!\1).)*?)\1/g, '<span style="color: #86efac">$1$2$1</span>');
-
-    // Functions
-    highlighted = highlighted.replace(/(\w+)(\s*\()/g, '<span style="color: #fbbf24">$1</span>$2');
-
-    // Numbers
-    highlighted = highlighted.replace(/\b(\d+)\b/g, '<span style="color: #67e8f9">$1</span>');
-
-    return { __html: highlighted };
+    
+    return <>{parts}</>;
   };
 
   return (
