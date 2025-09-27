@@ -210,7 +210,7 @@ export const InteractiveGraphBuilder: React.FC<InteractiveGraphBuilderProps> = (
         {nodes.map(node => {
           const isSelected = selectedNode === node.id;
           const color = node.cluster !== undefined ? 
-            clusterColors[node.cluster % clusterColors.length] : '#9ca3af';
+            getClusterColor(node.cluster) : '#9ca3af';
           
           // Apply any custom styles from the node
           const finalStyle = {
