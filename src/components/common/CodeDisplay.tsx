@@ -5,117 +5,114 @@ interface CodeDisplayProps {
   code: string[];
   currentLine: number;
   title?: string;
-  language?: string;
 }
 
-export const CodeDisplay: React.FC<CodeDisplayProps> = ({
-  code,
-  currentLine,
-  title = 'Algorithm',
-  language = 'javascript'
+export const CodeDisplay: React.FC<CodeDisplayProps> = ({ 
+  code, 
+  currentLine, 
+  title = "Algorithm Code" 
 }) => {
   const styles = {
     container: {
-      background: '#1e1e1e',
+      background: '#1e293b',
       borderRadius: '8px',
       padding: '16px',
-      fontFamily: 'Consolas, Monaco, "Courier New", monospace',
-      fontSize: '13px',
       overflow: 'auto',
-      maxHeight: '500px',
+      maxHeight: '400px',
     },
-    header: {
-      color: '#fff',
+    title: {
+      color: '#94a3b8',
+      fontSize: '14px',
       fontWeight: 'bold',
       marginBottom: '12px',
-      fontSize: '14px',
-      borderBottom: '1px solid #333',
-      paddingBottom: '8px',
     },
+    codeContainer: {
+      fontFamily: 'Consolas, Monaco, "Courier New", monospace',
+      fontSize: '13px',
+      lineHeight: '1.5',
+    },
+    line: (isActive: boolean) => ({
+      display: 'block',
+      padding: '2px 8px',
+      backgroundColor: isActive ? '#3b82f6' : 'transparent',
+      color: isActive ? '#ffffff' : '#cbd5e1',
+      borderRadius: '4px',
+      transition: 'all 0.3s ease',
+    }),
     lineNumber: {
       display: 'inline-block',
       width: '30px',
-      color: '#858585',
+      color: '#64748b',
       textAlign: 'right' as const,
-      paddingRight: '12px',
+      marginRight: '16px',
       userSelect: 'none' as const,
     },
-    codeLine: (isActive: boolean) => ({
-      display: 'block',
-      backgroundColor: isActive ? 'rgba(255, 235, 59, 0.2)' : 'transparent',
-      borderLeft: isActive ? '3px solid #ffeb3b' : '3px solid transparent',
-      paddingLeft: '8px',
-      transition: 'all 0.3s ease',
-      minHeight: '20px',
-      lineHeight: '20px',
-    }),
     codeText: {
       color: '#d4d4d4',
       whiteSpace: 'pre' as const,
     }
   };
 
-  const getHighlightedLine = (line: string) => {
-    // Parse the line and return React elements instead of HTML strings
-    const keywords = ['function', 'let', 'const', 'var', 'if', 'else', 'for', 'while', 'return', 'new', 'delete', 'of', 'in', 'true', 'false'];
+  const syntaxHighlight = (line: string) => {
+    // Handle empty lines
+    if (!line || line.length === 0) {
+      return <span>&nbsp;</span>;
+    }
     
     // Check if it's a comment line
     if (line.trim().startsWith('//')) {
-      return <span style={{ color: '#6a9955' }}>{line}</span>;
+      return <span style={{ color: '#64748b', fontStyle: 'italic' }}>{line}</span>;
     }
     
-    // Create a more robust tokenizer
+    // Create a tokenizer that returns React elements
     const parts: React.ReactNode[] = [];
-    let currentPos = 0;
+    const keywords = ['function', 'let', 'const', 'var', 'for', 'while', 'if', 'else', 'return', 'new', 'true', 'false', 'break', 'continue', 'of', 'in'];
     
-    // Regular expression to match keywords, numbers, strings, and function names
-    const regex = /\b(function|let|const|var|if|else|for|while|return|new|delete|of|in|true|false)\b|\b\d+\b|'[^']*'|"[^"]*"|\w+(?=\()/g;
+    // Split line into tokens while preserving whitespace
+    const tokens = line.split(/(\s+|[(){}[\],;.=<>!&|+\-*/])/);
     
-    let match;
-    while ((match = regex.exec(line)) !== null) {
-      // Add text before the match
-      if (match.index > currentPos) {
-        parts.push(line.substring(currentPos, match.index));
+    tokens.forEach((token, index) => {
+      if (token === null || token === undefined || token === '') {
+        return;
       }
       
-      const matchedText = match[0];
-      
-      if (keywords.includes(matchedText)) {
-        // Keywords
-        parts.push(<span key={match.index} style={{ color: '#569cd6' }}>{matchedText}</span>);
-      } else if (/^\d+$/.test(matchedText)) {
-        // Numbers
-        parts.push(<span key={match.index} style={{ color: '#b5cea8' }}>{matchedText}</span>);
-      } else if (matchedText.startsWith("'") || matchedText.startsWith('"')) {
-        // Strings
-        parts.push(<span key={match.index} style={{ color: '#ce9178' }}>{matchedText}</span>);
-      } else if (line[match.index + matchedText.length] === '(') {
-        // Function names (word followed by parenthesis)
-        parts.push(<span key={match.index} style={{ color: '#dcdcaa' }}>{matchedText}</span>);
-      } else {
-        parts.push(matchedText);
+      // Check if token is a keyword
+      if (keywords.includes(token)) {
+        parts.push(<span key={`${index}-kw`} style={{ color: '#c084fc', fontWeight: 'bold' }}>{token}</span>);
       }
-      
-      currentPos = match.index + matchedText.length;
-    }
+      // Check if token is a number
+      else if (/^\d+$/.test(token)) {
+        parts.push(<span key={`${index}-num`} style={{ color: '#67e8f9' }}>{token}</span>);
+      }
+      // Check if token is a string
+      else if (/^['"].*['"]$/.test(token)) {
+        parts.push(<span key={`${index}-str`} style={{ color: '#86efac' }}>{token}</span>);
+      }
+      // Check if it's a function name (followed by parenthesis)
+      else if (index < tokens.length - 1 && tokens[index + 1] === '(' && !/^[(){}[\],;.=<>!&|+\-*/\s]$/.test(token)) {
+        parts.push(<span key={`${index}-fn`} style={{ color: '#fbbf24' }}>{token}</span>);
+      }
+      // Default text - wrapped in span with key
+      else {
+        parts.push(<span key={`${index}-txt`}>{token}</span>);
+      }
+    });
     
-    // Add remaining text
-    if (currentPos < line.length) {
-      parts.push(line.substring(currentPos));
-    }
-    
-    return <>{parts}</>;
+    return <span>{parts}</span>;
   };
 
   return (
     <div style={styles.container}>
-      {title && <div style={styles.header}>{title}</div>}
-      <div>
+      <div style={styles.title}>{title}</div>
+      <div style={styles.codeContainer}>
         {code.map((line, index) => (
-          <div key={index} style={styles.codeLine(index === currentLine)}>
+          <div
+            key={index}
+            style={styles.line(index === currentLine)}
+          >
             <span style={styles.lineNumber}>{index + 1}</span>
             <span style={styles.codeText}>
-              {getHighlightedLine(line)}
+              {syntaxHighlight(line)}
             </span>
           </div>
         ))}
