@@ -64,44 +64,47 @@ export const CodeDisplay: React.FC<CodeDisplayProps> = ({
   };
 
   const syntaxHighlight = (line: string) => {
-    // Create a more robust tokenizer that returns React elements
-    const parts: React.ReactNode[] = [];
-    const keywords = ['function', 'let', 'const', 'var', 'for', 'while', 'if', 'else', 'return', 'new', 'true', 'false', 'break', 'continue', 'of', 'in'];
+    // Handle empty lines
+    if (!line || line.length === 0) {
+      return <span>&nbsp;</span>;
+    }
     
     // Check if it's a comment line
     if (line.trim().startsWith('//')) {
       return <span style={{ color: '#64748b', fontStyle: 'italic' }}>{line}</span>;
     }
     
+    // Create a more robust tokenizer that returns React elements
+    const parts: React.ReactNode[] = [];
+    const keywords = ['function', 'let', 'const', 'var', 'for', 'while', 'if', 'else', 'return', 'new', 'true', 'false', 'break', 'continue', 'of', 'in'];
+    
     // Split line into tokens while preserving whitespace
     const tokens = line.split(/(\s+|[(){}[\],;.=<>!&|+\-*/])/);
     
     tokens.forEach((token, index) => {
-      if (!token) return;
+      if (token === null || token === undefined || token === '') {
+        return;
+      }
       
       // Check if token is a keyword
       if (keywords.includes(token)) {
-        parts.push(<span key={index} style={{ color: '#c084fc', fontWeight: 'bold' }}>{token}</span>);
+        parts.push(<span key={`${index}-kw`} style={{ color: '#c084fc', fontWeight: 'bold' }}>{token}</span>);
       }
       // Check if token is a number
       else if (/^\d+$/.test(token)) {
-        parts.push(<span key={index} style={{ color: '#67e8f9' }}>{token}</span>);
+        parts.push(<span key={`${index}-num`} style={{ color: '#67e8f9' }}>{token}</span>);
       }
       // Check if token is a string
       else if (/^['"].*['"]$/.test(token)) {
-        parts.push(<span key={index} style={{ color: '#86efac' }}>{token}</span>);
+        parts.push(<span key={`${index}-str`} style={{ color: '#86efac' }}>{token}</span>);
       }
       // Check if it's a function name (followed by parenthesis)
-      else if (index < tokens.length - 1 && tokens[index + 1] === '(') {
-        if (!/^[(){}[\],;.=<>!&|+\-*/\s]$/.test(token)) {
-          parts.push(<span key={index} style={{ color: '#fbbf24' }}>{token}</span>);
-        } else {
-          parts.push(token);
-        }
+      else if (index < tokens.length - 1 && tokens[index + 1] === '(' && !/^[(){}[\],;.=<>!&|+\-*/\s]$/.test(token)) {
+        parts.push(<span key={`${index}-fn`} style={{ color: '#fbbf24' }}>{token}</span>);
       }
       // Default text
       else {
-        parts.push(token);
+        parts.push(<span key={`${index}-txt`}>{token}</span>);
       }
     });
     

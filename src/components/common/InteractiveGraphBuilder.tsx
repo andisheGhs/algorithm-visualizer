@@ -230,7 +230,7 @@ export const InteractiveGraphBuilder: React.FC<InteractiveGraphBuilderProps> = (
                 stroke={finalStyle.stroke}
                 strokeWidth={finalStyle.strokeWidth}
                 opacity={finalStyle.opacity}
-                onClick={(e) => handleNodeClick(node.id, e)}
+                onClick={() => handleNodeClick(node.id)}
                 onMouseDown={(e) => handleNodeMouseDown(node.id, e)}
                 style={{ 
                   cursor: mode === 'view' ? 'default' : 'pointer',
