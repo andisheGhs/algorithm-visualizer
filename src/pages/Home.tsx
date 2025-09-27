@@ -142,7 +142,7 @@ export const Home: React.FC<HomeProps> = ({ onNavigate }) => {
   const handleBackClick = () => {
     // This will navigate to your portfolio website
     // Update the URL to match where your blog is hosted
-    window.location.href = 'https://yourusername.github.io/writing.html';
+    window.location.href = 'https://andisheghs.github.io/writing.html';
   };
 
   return (
