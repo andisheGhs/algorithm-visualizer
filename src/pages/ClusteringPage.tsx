@@ -420,6 +420,7 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
     const clusters: Record<string, number> = {};
     const pivotsSet = new Set<string>();
     const clusterSizes = new Array(k).fill(0);
+    const arrivedSet = new Set<string>();
     
     // Reset all nodes to be "unarrived" (faded)
     setNodes(prev => prev.map(n => ({...n, cluster: undefined})));
@@ -427,48 +428,59 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
     setCurrentLine(1); // function balancedPivot...
     await sleep(speedRef.current);
 
-    // Process nodes one by one
+    // Process nodes one by one (arrival order)
     for (const node of nodes) {
       if (stopSignal.current) break;
       
       setCurrentLine(6); // for (let node of nodes)
       
       // Mark node as arrived
-      setArrivedNodes(prev => new Set([...prev, node.id]));
+      arrivedSet.add(node.id);
+      setArrivedNodes(new Set(arrivedSet));
       await sleep(speedRef.current);
 
+      // Check if any ALREADY ARRIVED neighbors are pivots
       let pivotNeighbor: string | null = null;
       
       setCurrentLine(10); // for (let neighbor of getNeighbors...)
       const neighbors = getNeighbors(node.id, edges);
       
-      // Only consider neighbors that have already arrived
+      // Only check neighbors that have ALREADY ARRIVED and are pivots
       for (const neighbor of neighbors) {
-        if (pivotsSet.has(neighbor) && arrivedNodes.has(neighbor)) {
+        if (arrivedSet.has(neighbor) && pivotsSet.has(neighbor)) {
           pivotNeighbor = neighbor;
+          console.log(`Node ${node.id} has pivot neighbor ${neighbor} in cluster ${clusters[neighbor]}`);
           break;
         }
       }
 
       if (pivotNeighbor) {
+        // Has a pivot neighbor that already arrived - join its cluster
         setCurrentLine(18); // if (pivotNeighbor)
         await sleep(speedRef.current);
         
-        // Add to pivot neighbor's cluster
         setCurrentLine(20); // clusters[node] = clusters[pivotNeighbor]
-        clusters[node.id] = clusters[pivotNeighbor];
-        clusterSizes[clusters[node.id]]++;
+        const clusterId = clusters[pivotNeighbor];
+        clusters[node.id] = clusterId;
+        clusterSizes[clusterId]++;
+        
+        console.log(`Node ${node.id} joins cluster ${clusterId} of pivot ${pivotNeighbor}`);
+        
         setNodes(prev => prev.map(n => 
-          n.id === node.id ? {...n, cluster: clusters[node.id]} : n
+          n.id === node.id ? {...n, cluster: clusterId} : n
         ));
       } else {
+        // No pivot neighbors among arrived nodes - become a new pivot
         setCurrentLine(23); // else
         await sleep(speedRef.current);
         
-        // Make it a pivot in smallest cluster
+        // Find cluster with minimum nodes for balancing
         setCurrentLine(24); // let clusterId = clusterSizes.indexOf...
         const clusterId = clusterSizes.indexOf(Math.min(...clusterSizes));
         
+        console.log(`Node ${node.id} becomes pivot in cluster ${clusterId} (size: ${clusterSizes[clusterId]})`);
+        
+        // Highlight as current pivot
         setCurrentPivot(node.id);
         setPivots(prev => new Set([...prev, node.id]));
         
@@ -484,6 +496,10 @@ export const ClusteringPage: React.FC<ClusteringPageProps> = ({ onBack }) => {
         setCurrentPivot(null);
       }
     }
+
+    console.log('Final clusters:', clusters);
+    console.log('Pivots:', Array.from(pivotsSet));
+    console.log('Cluster sizes:', clusterSizes);
 
     setCurrentLine(-1);
     setCurrentPivot(null);
